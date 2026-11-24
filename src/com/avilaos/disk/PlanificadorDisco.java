@@ -4,15 +4,6 @@ package com.avilaos.disk;
 import com.avilaos.structures.Cola;
 import java.util.concurrent.Semaphore;
 
-/**
- * Planificador de disco de AvilaOS.
- *
- * Atiende una solicitud a la vez.
- * Cada llamada a avanzarCiclo() representa un ciclo
- * de trabajo del disco.
- *
- * No utiliza colecciones de java.util.
- */
 public class PlanificadorDisco {
 
     private enum Fase {
@@ -77,10 +68,6 @@ public class PlanificadorDisco {
         this.ultimoCiclo = -1;
     }
 
-    // =====================================
-    // SOLICITUDES
-    // =====================================
-
     public void agregarSolicitud(SolicitudDisco solicitud) {
 
         if (solicitud == null) {
@@ -131,20 +118,12 @@ public class PlanificadorDisco {
         }
     }
 
-    // =====================================
-    // PLANIFICACION
-    // =====================================
-
     private void seleccionarSolicitud(long cicloActual) {
 
         if (cola.estaVacia()) {
             return;
         }
 
-        /*
-         * Separamos temporalmente las solicitudes
-         * que aun no han llegado al reloj actual.
-         */
         Cola<SolicitudDisco> disponibles = new Cola<>();
         Cola<SolicitudDisco> futuras = new Cola<>();
 
@@ -188,10 +167,6 @@ public class PlanificadorDisco {
             return;
         }
 
-        /*
-         * Devolver las solicitudes no seleccionadas
-         * a la cola principal.
-         */
         while (!disponibles.estaVacia()) {
             cola.encolar(disponibles.desencolar());
         }
@@ -217,10 +192,6 @@ public class PlanificadorDisco {
                 ? destino < posicionAnterior
                 : destino > posicionAnterior;
 
-        /*
-         * SCAN llega al extremo antes de invertir.
-         * C-SCAN llega al extremo antes de retornar.
-         */
         if (estaDetras
                 && (seleccionada instanceof SCAN
                 || seleccionada instanceof CSCAN)) {
@@ -232,16 +203,6 @@ public class PlanificadorDisco {
         }
     }
 
-    // =====================================
-    // AVANCE POR CICLOS
-    // =====================================
-
-    /**
-     * Ejecuta un ciclo del disco.
-     *
-     * @return solicitud finalizada, o null
-     *         si todavia esta trabajando.
-     */
     public SolicitudDisco avanzarCiclo(long cicloActual) {
 
         mutex.acquireUninterruptibly();
@@ -295,11 +256,6 @@ public class PlanificadorDisco {
                         ? 0
                         : disco.getTotalBloques() - 1;
 
-                /*
-                 * Convencion de este simulador:
-                 * el retorno circular ocupa un ciclo
-                 * y no suma desplazamiento medido.
-                 */
                 disco.setPosicionCabezal(reinicio);
                 fase = Fase.HACIA_DESTINO;
 
@@ -379,10 +335,6 @@ public class PlanificadorDisco {
         }
     }
 
-    // =====================================
-    // CAMBIOS DE POLITICA
-    // =====================================
-
     public void cambiarPolitica(
             PoliticaPlanificacionDisco nueva) {
 
@@ -411,10 +363,6 @@ public class PlanificadorDisco {
             mutex.release();
         }
     }
-
-    // =====================================
-    // METRICAS
-    // =====================================
 
     private void contarPolitica(
             PoliticaPlanificacionDisco utilizada) {
@@ -525,9 +473,22 @@ public class PlanificadorDisco {
     }
 
     public int getPosicionCabezal() {
+
         mutex.acquireUninterruptibly();
+
         try {
             return disco.getPosicionCabezal();
+        } finally {
+            mutex.release();
+        }
+    }
+
+    public int getTotalBloques() {
+
+        mutex.acquireUninterruptibly();
+
+        try {
+            return disco.getTotalBloques();
         } finally {
             mutex.release();
         }
