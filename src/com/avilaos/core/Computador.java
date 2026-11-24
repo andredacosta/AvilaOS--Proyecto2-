@@ -1,6 +1,9 @@
 
 package com.avilaos.core;
 
+import com.avilaos.disk.OperacionDisco;
+import com.avilaos.disk.PlanificadorDisco;
+import com.avilaos.disk.SolicitudDisco;
 import com.avilaos.model.EstadoProceso;
 import com.avilaos.model.FaseOperacionBuffer;
 import com.avilaos.model.MotivoBloqueo;
@@ -27,6 +30,10 @@ public class Computador implements ComponenteReloj {
     private int ciclosQuantum;
     private int latenciaRed;
 
+    private PlanificadorDisco planificadorDisco;
+    private long cicloDisco;
+    private int siguienteIdSolicitud;
+
     public Computador(
             int id,
             int capacidadRAM,
@@ -51,6 +58,33 @@ public class Computador implements ComponenteReloj {
 
         this.ciclosQuantum = 0;
         this.latenciaRed = 3;
+
+        this.planificadorDisco = null;
+        this.cicloDisco = 0;
+        this.siguienteIdSolicitud = 0;
+    }
+
+    public void configurarPlanificadorDisco(
+            PlanificadorDisco nuevo) {
+
+        if (nuevo == null) {
+            throw new IllegalArgumentException(
+                    "Planificador de disco invalido");
+        }
+
+        if (cicloDisco != 0
+                || !cpu.estaLibre()
+                || !colaBloqueados.estaVacia()) {
+
+            throw new IllegalStateException(
+                    "Configure el disco antes de ejecutar");
+        }
+
+        this.planificadorDisco = nuevo;
+    }
+
+    public PlanificadorDisco getPlanificadorDisco() {
+        return planificadorDisco;
     }
 
     public void configurarControlBuffer(
@@ -88,16 +122,13 @@ public class Computador implements ComponenteReloj {
 
         if (proceso.getPcb().getEstado()
                 != EstadoProceso.NUEVO) {
+
             throw new IllegalStateException(
                     "El proceso debe estar NUEVO");
         }
 
         colaNuevos.encolar(proceso);
     }
-
-    // =========================================
-    // ADMISION DE PROCESOS
-    // =========================================
 
     private void admitirProcesos() {
 
@@ -121,15 +152,10 @@ public class Computador implements ComponenteReloj {
                 colaListos.encolar(proceso);
 
             } else {
-
                 colaNuevos.encolar(proceso);
             }
         }
     }
-
-    // =========================================
-    // DESPACHO Y PLANIFICACION
-    // =========================================
 
     private void despachar() {
 
@@ -142,6 +168,11 @@ public class Computador implements ComponenteReloj {
                 planificador.seleccionar(colaListos);
 
         if (siguiente != null) {
+
+            siguiente.configurarIOGestionadaPorDisco(
+                    planificadorDisco != null
+            );
+
             cpu.asignarProceso(siguiente);
             ciclosQuantum = 0;
         }
@@ -170,10 +201,6 @@ public class Computador implements ComponenteReloj {
             ciclosQuantum = 0;
         }
     }
-
-    // =========================================
-    // CANCELACION SEGURA
-    // =========================================
 
     private void registrarTerminado(
             Proceso proceso,
@@ -234,21 +261,12 @@ public class Computador implements ComponenteReloj {
             disminuirDeadline(proceso);
 
             if (proceso.estaTerminado()) {
-
-                registrarTerminado(
-                        proceso,
-                        tieneMemoria);
-
+                registrarTerminado(proceso, tieneMemoria);
             } else {
-
                 cola.encolar(proceso);
             }
         }
     }
-
-    // =========================================
-    // DESPERTAR POR SEMAFORO
-    // =========================================
 
     private boolean tienePermisoParaDespertar(
             Proceso proceso) {
@@ -266,17 +284,12 @@ public class Computador implements ComponenteReloj {
         SemaforoSimulado semaforo = null;
 
         if (motivo == MotivoBloqueo.BUFFER_LLENO) {
-
             semaforo = buffer.getVacios();
 
-        } else if (motivo
-                == MotivoBloqueo.BUFFER_VACIO) {
-
+        } else if (motivo == MotivoBloqueo.BUFFER_VACIO) {
             semaforo = buffer.getLlenos();
 
-        } else if (motivo
-                == MotivoBloqueo.MUTEX_OCUPADO) {
-
+        } else if (motivo == MotivoBloqueo.MUTEX_OCUPADO) {
             semaforo = buffer.getMutex();
         }
 
@@ -285,9 +298,137 @@ public class Computador implements ComponenteReloj {
                         proceso);
     }
 
-    // =========================================
-    // PROCESOS BLOQUEADOS
-    // =========================================
+    public void solicitarDisco(SolicitudDisco solicitud) {
+
+        if (planificadorDisco == null) {
+            throw new IllegalStateException(
+                    "El disco no esta configurado");
+        }
+
+        if (solicitud == null) {
+            throw new IllegalArgumentException(
+                    "Solicitud nula");
+        }
+
+        Proceso actual = cpu.getProcesoActual();
+
+        if (actual == null
+                || actual.getPcb().getEstado()
+                != EstadoProceso.EJECUCION) {
+
+            throw new IllegalStateException(
+                    "Debe existir un proceso en ejecucion");
+        }
+
+        if (solicitud.getProcesoId()
+                != actual.getPcb().getId()) {
+
+            throw new IllegalArgumentException(
+                    "La solicitud pertenece a otro proceso");
+        }
+
+        if (solicitud.getCicloLlegada() > cicloDisco) {
+            throw new IllegalArgumentException(
+                    "La solicitud no puede llegar en el futuro");
+        }
+
+        planificadorDisco.agregarSolicitud(solicitud);
+
+        if (solicitud.getId() > siguienteIdSolicitud) {
+            siguienteIdSolicitud = solicitud.getId();
+        }
+
+        actual.configurarIOGestionadaPorDisco(true);
+        actual.iniciarIODisco();
+
+        cpu.liberarCPU();
+        colaBloqueados.encolar(actual);
+
+        ciclosQuantum = 0;
+    }
+
+    private void solicitarIOAutomatica(
+            Proceso proceso) {
+
+        if (planificadorDisco == null
+                || !proceso.debeSolicitarDisco()) {
+            return;
+        }
+
+        int totalBloques =
+                planificadorDisco.getTotalBloques();
+
+        int destino = (int) (
+                ((long) proceso.getPcb().getId()
+                + proceso.getPcb().getProgramCounter())
+                % totalBloques
+        );
+
+        if (siguienteIdSolicitud
+                == Integer.MAX_VALUE) {
+            throw new IllegalStateException(
+                    "Se agotaron los IDs de solicitudes");
+        }
+
+        SolicitudDisco solicitud =
+                new SolicitudDisco(
+                        siguienteIdSolicitud + 1,
+                        proceso.getPcb().getId(),
+                        OperacionDisco.READ,
+                        "/simulada/proceso-"
+                                + proceso.getPcb().getId(),
+                        destino,
+                        1,
+                        cicloDisco
+                );
+
+        solicitarDisco(solicitud);
+    }
+
+    private void avanzarDisco() {
+
+        if (planificadorDisco == null) {
+            return;
+        }
+
+        SolicitudDisco finalizada =
+                planificadorDisco.avanzarCiclo(
+                        cicloDisco
+                );
+
+        cicloDisco++;
+
+        if (finalizada != null) {
+            completarSolicitudDisco(finalizada);
+        }
+    }
+
+    private void completarSolicitudDisco(
+            SolicitudDisco solicitud) {
+
+        int cantidad = colaBloqueados.getTamanio();
+
+        for (int i = 0; i < cantidad; i++) {
+
+            Proceso proceso =
+                    colaBloqueados.desencolar();
+
+            boolean corresponde =
+                    proceso.getPcb().getId()
+                    == solicitud.getProcesoId();
+
+            if (corresponde
+                    && !proceso.estaTerminado()
+                    && proceso.tieneIODiscoPendiente()) {
+
+                proceso.completarIODisco();
+                colaListos.encolar(proceso);
+
+            } else {
+                colaBloqueados.encolar(proceso);
+            }
+        }
+    }
 
     private void avanzarBloqueados() {
 
@@ -299,7 +440,6 @@ public class Computador implements ComponenteReloj {
                     colaBloqueados.desencolar();
 
             if (proceso.estaTerminado()) {
-
                 registrarTerminado(proceso, true);
                 continue;
             }
@@ -309,49 +449,39 @@ public class Computador implements ComponenteReloj {
 
             boolean despertar = false;
 
-            if (motivo
-                    == MotivoBloqueo.ENTRADA_SALIDA) {
+            if (motivo == MotivoBloqueo.ENTRADA_SALIDA) {
 
-                proceso.avanzarIO();
-                despertar = proceso.ioFinalizada();
+                if (!proceso.tieneIODiscoPendiente()) {
+                    proceso.avanzarIO();
+                    despertar = proceso.ioFinalizada();
+                }
 
             } else if (motivo
                     == MotivoBloqueo.LATENCIA_RED) {
 
                 proceso.getPcb().avanzarLatencia();
-
                 despertar = proceso.getPcb()
                         .latenciaFinalizada();
 
             } else if (motivo
                     == MotivoBloqueo.BUFFER_LLENO
-                    || motivo
-                    == MotivoBloqueo.BUFFER_VACIO
-                    || motivo
-                    == MotivoBloqueo.MUTEX_OCUPADO) {
+                    || motivo == MotivoBloqueo.BUFFER_VACIO
+                    || motivo == MotivoBloqueo.MUTEX_OCUPADO) {
 
                 despertar =
                         tienePermisoParaDespertar(proceso);
             }
 
             if (despertar) {
-
                 proceso.getPcb().desbloquear();
                 colaListos.encolar(proceso);
-
             } else {
-
                 colaBloqueados.encolar(proceso);
             }
         }
     }
 
-    // =========================================
-    // ACCESO LOCAL Y REMOTO
-    // =========================================
-
-    private boolean accesoRemoto(
-            Proceso proceso) {
+    private boolean accesoRemoto(Proceso proceso) {
 
         if (controlBuffer == null) {
             return false;
@@ -387,8 +517,6 @@ public class Computador implements ComponenteReloj {
 
         controlBuffer.ejecutarOperacion(proceso);
 
-        // Una operacion logica completa termina
-        // despues del ultimo semSignal.
         if (faseAnterior
                 == FaseOperacionBuffer.NOTIFICANDO_BUFFER
                 && proceso.getPcb().getEstado()
@@ -398,47 +526,32 @@ public class Computador implements ComponenteReloj {
         }
     }
 
-    // =========================================
-    // CICLO DEL COMPUTADOR
-    // =========================================
-
     @Override
     public void ejecutarCiclo() {
 
-        // 1. Actualizar procesos bloqueados.
+        avanzarDisco();
         avanzarBloqueados();
-
-        // 2. Admitir procesos nuevos.
         admitirProcesos();
-
-        // 3. Evaluar desalojo.
         evaluarDesalojo();
-
-        // 4. Despachar siguiente proceso.
         despachar();
 
         Proceso actual = cpu.getProcesoActual();
 
-        // 5. Ejecutar CPU.
         if (actual != null
                 && actual.esProductorConsumidor()) {
 
             cpu.ejecutarCicloSistema();
-
             prepararOperacionBuffer(actual);
 
         } else {
-
             cpu.ejecutarCiclo();
         }
 
-        // 6. Procesar resultado de ejecucion.
         if (actual != null) {
 
             if (actual.estaTerminado()) {
 
                 cpu.liberarCPU();
-
                 registrarTerminado(actual, true);
                 ciclosQuantum = 0;
 
@@ -447,29 +560,23 @@ public class Computador implements ComponenteReloj {
 
                 cpu.liberarCPU();
                 colaBloqueados.encolar(actual);
-
                 ciclosQuantum = 0;
 
-            } else {
+            } else if (actual == cpu.getProcesoActual()
+                    && actual.debeSolicitarDisco()) {
 
+                solicitarIOAutomatica(actual);
+
+            } else {
                 ciclosQuantum++;
             }
         }
 
-        // 7. Actualizar deadlines de las colas.
-        actualizarDeadlineCola(
-                colaNuevos, false);
+        actualizarDeadlineCola(colaNuevos, false);
+        actualizarDeadlineCola(colaListos, true);
+        actualizarDeadlineCola(colaBloqueados, true);
 
-        actualizarDeadlineCola(
-                colaListos, true);
-
-        actualizarDeadlineCola(
-                colaBloqueados, true);
-
-        // 8. Actualizar deadline del proceso
-        // que permanece ejecutando.
-        Proceso ejecutando =
-                cpu.getProcesoActual();
+        Proceso ejecutando = cpu.getProcesoActual();
 
         if (ejecutando != null) {
 
@@ -478,18 +585,11 @@ public class Computador implements ComponenteReloj {
             if (ejecutando.estaTerminado()) {
 
                 cpu.liberarCPU();
-
-                registrarTerminado(
-                        ejecutando, true);
-
+                registrarTerminado(ejecutando, true);
                 ciclosQuantum = 0;
             }
         }
     }
-
-    // =========================================
-    // CONFIGURACION
-    // =========================================
 
     public void cambiarPlanificador(
             PoliticaScheduler nuevoPlanificador) {
@@ -502,10 +602,6 @@ public class Computador implements ComponenteReloj {
         this.planificador = nuevoPlanificador;
         ciclosQuantum = 0;
     }
-
-    // =========================================
-    // GETTERS
-    // =========================================
 
     public int getId() {
         return id;
@@ -537,5 +633,9 @@ public class Computador implements ComponenteReloj {
 
     public int getProcesosTerminados() {
         return colaTerminados.getTamanio();
+    }
+
+    public long getCicloDisco() {
+        return cicloDisco;
     }
 }
