@@ -20,21 +20,18 @@ public class PCB {
 
     private boolean vencidoPorDeadline;
 
-    // Configuracion de entrada/salida
     private static final int INTERVALO_IO = 2;
     private static final int DURACION_IO = 3;
 
     private int ciclosIORestantes;
     private MotivoBloqueo motivoBloqueo;
 
-    // Proyecto 2: E/S gestionada por el disco real simulado
     private boolean ioDiscoPendiente;
+    private boolean ioDiscoCompletadaDuranteSuspension;
 
-    // Latencia de red simulada
     private int ciclosLatenciaRestantes;
     private boolean latenciaAplicadaOperacion;
 
-    // Fase actual del productor-consumidor
     private FaseOperacionBuffer faseOperacionBuffer;
 
     public PCB(int id, String nombre, int computadorId,
@@ -43,13 +40,11 @@ public class PCB {
                int totalInstrucciones) {
 
         if (id <= 0 || computadorId <= 0) {
-            throw new IllegalArgumentException(
-                    "ID invalido");
+            throw new IllegalArgumentException("ID invalido");
         }
 
         if (nombre == null || nombre.isBlank() || tipo == null) {
-            throw new IllegalArgumentException(
-                    "Proceso invalido");
+            throw new IllegalArgumentException("Proceso invalido");
         }
 
         if (memoriaRequerida <= 0 || deadline <= 0
@@ -71,12 +66,12 @@ public class PCB {
 
         this.programCounter = 0;
         this.mar = 0;
-
         this.vencidoPorDeadline = false;
 
         this.ciclosIORestantes = 0;
         this.motivoBloqueo = MotivoBloqueo.NINGUNO;
         this.ioDiscoPendiente = false;
+        this.ioDiscoCompletadaDuranteSuspension = false;
 
         this.ciclosLatenciaRestantes = 0;
         this.latenciaAplicadaOperacion = false;
@@ -84,10 +79,6 @@ public class PCB {
         this.faseOperacionBuffer =
                 FaseOperacionBuffer.ESPERANDO_PERMISO;
     }
-
-    // ==========================================
-    // GETTERS
-    // ==========================================
 
     public int getId() {
         return id;
@@ -110,12 +101,9 @@ public class PCB {
     }
 
     public void setEstado(EstadoProceso estado) {
-
         if (estado == null) {
-            throw new IllegalArgumentException(
-                    "Estado invalido");
+            throw new IllegalArgumentException("Estado invalido");
         }
-
         this.estado = estado;
     }
 
@@ -159,6 +147,10 @@ public class PCB {
         return ioDiscoPendiente;
     }
 
+    public boolean isIODiscoCompletadaDuranteSuspension() {
+        return ioDiscoCompletadaDuranteSuspension;
+    }
+
     public int getCiclosLatenciaRestantes() {
         return ciclosLatenciaRestantes;
     }
@@ -171,36 +163,23 @@ public class PCB {
         return faseOperacionBuffer;
     }
 
-    // ==========================================
-    // EJECUCION DE INSTRUCCIONES
-    // ==========================================
-
     public void avanzarInstruccion() {
-
         if (tiempoRestante > 0
                 && estado == EstadoProceso.EJECUCION) {
-
             programCounter++;
             mar++;
             tiempoRestante--;
         }
     }
 
-    // ==========================================
-    // DEADLINES
-    // ==========================================
-
     public void disminuirDeadline() {
-
         if (deadline > 0
                 && estado != EstadoProceso.TERMINADO) {
-
             deadline--;
         }
     }
 
     public void vencerDeadline() {
-
         if (estado == EstadoProceso.TERMINADO) {
             return;
         }
@@ -210,30 +189,23 @@ public class PCB {
 
         ciclosIORestantes = 0;
         ioDiscoPendiente = false;
+        ioDiscoCompletadaDuranteSuspension = false;
 
         ciclosLatenciaRestantes = 0;
         latenciaAplicadaOperacion = false;
-
         motivoBloqueo = MotivoBloqueo.NINGUNO;
 
         estado = EstadoProceso.TERMINADO;
     }
 
-    // ==========================================
-    // BLOQUEO Y DESBLOQUEO
-    // ==========================================
-
     public void bloquear(MotivoBloqueo motivo) {
-
         if (motivo == null
                 || motivo == MotivoBloqueo.NINGUNO) {
-
             throw new IllegalArgumentException(
                     "Motivo de bloqueo invalido");
         }
 
         if (estado != EstadoProceso.EJECUCION) {
-
             throw new IllegalStateException(
                     "Solo un proceso en ejecucion puede bloquearse");
         }
@@ -243,9 +215,7 @@ public class PCB {
     }
 
     public void desbloquear() {
-
         if (estado != EstadoProceso.BLOQUEADO) {
-
             throw new IllegalStateException(
                     "El proceso no esta bloqueado");
         }
@@ -259,12 +229,7 @@ public class PCB {
         estado = EstadoProceso.LISTO;
     }
 
-    // ==========================================
-    // ENTRADA Y SALIDA - PROYECTO 1
-    // ==========================================
-
     public boolean debeSolicitarIO() {
-
         return tipo == TipoProceso.IO_BOUND
                 && estado == EstadoProceso.EJECUCION
                 && tiempoRestante > 0
@@ -275,22 +240,18 @@ public class PCB {
     }
 
     public void iniciarIO() {
-
         if (!debeSolicitarIO()) {
             throw new IllegalStateException(
                     "El proceso no puede iniciar E/S");
         }
 
         ciclosIORestantes = DURACION_IO;
-
         bloquear(MotivoBloqueo.ENTRADA_SALIDA);
     }
 
     public void avanzarIO() {
-
         if (estado != EstadoProceso.BLOQUEADO
-                || motivoBloqueo
-                != MotivoBloqueo.ENTRADA_SALIDA
+                || motivoBloqueo != MotivoBloqueo.ENTRADA_SALIDA
                 || ioDiscoPendiente) {
             return;
         }
@@ -301,26 +262,13 @@ public class PCB {
     }
 
     public boolean ioFinalizada() {
-
         return estado == EstadoProceso.BLOQUEADO
-                && motivoBloqueo
-                == MotivoBloqueo.ENTRADA_SALIDA
+                && motivoBloqueo == MotivoBloqueo.ENTRADA_SALIDA
                 && !ioDiscoPendiente
                 && ciclosIORestantes == 0;
     }
 
-    // ==========================================
-    // ENTRADA Y SALIDA - PROYECTO 2
-    // ==========================================
-
-    /**
-     * Bloquea el proceso para esperar una solicitud
-     * gestionada por PlanificadorDisco.
-     *
-     * No utiliza el contador fijo del Proyecto 1.
-     */
     public void iniciarIODisco() {
-
         if (estado != EstadoProceso.EJECUCION) {
             throw new IllegalStateException(
                     "El proceso debe estar en ejecucion");
@@ -332,35 +280,59 @@ public class PCB {
         }
 
         ciclosIORestantes = 0;
+        ioDiscoCompletadaDuranteSuspension = false;
 
         bloquear(MotivoBloqueo.ENTRADA_SALIDA);
         ioDiscoPendiente = true;
     }
 
-    /**
-     * Solo debe llamarse cuando el planificador
-     * confirme que termino la solicitud de disco.
-     */
     public void completarIODisco() {
-
         if (!ioDiscoPendiente
                 || estado != EstadoProceso.BLOQUEADO
                 || motivoBloqueo != MotivoBloqueo.ENTRADA_SALIDA) {
-
             throw new IllegalStateException(
                     "El proceso no espera una E/S de disco");
         }
 
         ioDiscoPendiente = false;
+        ioDiscoCompletadaDuranteSuspension = false;
         desbloquear();
     }
 
-    // ==========================================
-    // LATENCIA DE RED
-    // ==========================================
+    public void completarIODiscoEnSuspension() {
+        if (!ioDiscoPendiente
+                || motivoBloqueo != MotivoBloqueo.ENTRADA_SALIDA
+                || (estado != EstadoProceso.BLOQUEADO
+                && estado != EstadoProceso.BLOQUEADO_SUSPENDIDO)) {
+            throw new IllegalStateException(
+                    "No existe E/S pendiente para suspension");
+        }
+
+        ioDiscoPendiente = false;
+
+        if (estado == EstadoProceso.BLOQUEADO_SUSPENDIDO) {
+            motivoBloqueo = MotivoBloqueo.NINGUNO;
+            estado = EstadoProceso.LISTO_SUSPENDIDO;
+            ioDiscoCompletadaDuranteSuspension = false;
+        } else {
+            ioDiscoCompletadaDuranteSuspension = true;
+        }
+    }
+
+    public void confirmarSuspension() {
+        if (estado != EstadoProceso.BLOQUEADO_SUSPENDIDO) {
+            throw new IllegalStateException(
+                    "El proceso no esta bloqueado y suspendido");
+        }
+
+        if (ioDiscoCompletadaDuranteSuspension) {
+            ioDiscoCompletadaDuranteSuspension = false;
+            motivoBloqueo = MotivoBloqueo.NINGUNO;
+            estado = EstadoProceso.LISTO_SUSPENDIDO;
+        }
+    }
 
     public void iniciarLatencia(int ciclos) {
-
         if (ciclos <= 0) {
             throw new IllegalArgumentException(
                     "La latencia debe ser positiva");
@@ -389,10 +361,8 @@ public class PCB {
     }
 
     public void avanzarLatencia() {
-
         if (estado != EstadoProceso.BLOQUEADO
-                || motivoBloqueo
-                != MotivoBloqueo.LATENCIA_RED) {
+                || motivoBloqueo != MotivoBloqueo.LATENCIA_RED) {
             return;
         }
 
@@ -402,15 +372,12 @@ public class PCB {
     }
 
     public boolean latenciaFinalizada() {
-
         return estado == EstadoProceso.BLOQUEADO
-                && motivoBloqueo
-                == MotivoBloqueo.LATENCIA_RED
+                && motivoBloqueo == MotivoBloqueo.LATENCIA_RED
                 && ciclosLatenciaRestantes == 0;
     }
 
     public void completarOperacionBuffer() {
-
         if (tipo != TipoProceso.PRODUCTOR
                 && tipo != TipoProceso.CONSUMIDOR) {
             throw new IllegalStateException(
@@ -421,23 +388,16 @@ public class PCB {
         ciclosLatenciaRestantes = 0;
     }
 
-    // ==========================================
-    // FASES PRODUCTOR-CONSUMIDOR
-    // ==========================================
-
     public void setFaseOperacionBuffer(
             FaseOperacionBuffer fase) {
-
         if (fase == null) {
-            throw new IllegalArgumentException(
-                    "Fase invalida");
+            throw new IllegalArgumentException("Fase invalida");
         }
 
         this.faseOperacionBuffer = fase;
     }
 
     public void reiniciarFaseOperacionBuffer() {
-
         this.faseOperacionBuffer =
                 FaseOperacionBuffer.ESPERANDO_PERMISO;
     }
