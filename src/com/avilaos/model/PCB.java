@@ -27,6 +27,9 @@ public class PCB {
     private int ciclosIORestantes;
     private MotivoBloqueo motivoBloqueo;
 
+    // Proyecto 2: E/S gestionada por el disco real simulado
+    private boolean ioDiscoPendiente;
+
     // Latencia de red simulada
     private int ciclosLatenciaRestantes;
     private boolean latenciaAplicadaOperacion;
@@ -73,6 +76,7 @@ public class PCB {
 
         this.ciclosIORestantes = 0;
         this.motivoBloqueo = MotivoBloqueo.NINGUNO;
+        this.ioDiscoPendiente = false;
 
         this.ciclosLatenciaRestantes = 0;
         this.latenciaAplicadaOperacion = false;
@@ -106,6 +110,7 @@ public class PCB {
     }
 
     public void setEstado(EstadoProceso estado) {
+
         if (estado == null) {
             throw new IllegalArgumentException(
                     "Estado invalido");
@@ -148,6 +153,10 @@ public class PCB {
 
     public MotivoBloqueo getMotivoBloqueo() {
         return motivoBloqueo;
+    }
+
+    public boolean isIODiscoPendiente() {
+        return ioDiscoPendiente;
     }
 
     public int getCiclosLatenciaRestantes() {
@@ -200,6 +209,8 @@ public class PCB {
         vencidoPorDeadline = true;
 
         ciclosIORestantes = 0;
+        ioDiscoPendiente = false;
+
         ciclosLatenciaRestantes = 0;
         latenciaAplicadaOperacion = false;
 
@@ -239,12 +250,17 @@ public class PCB {
                     "El proceso no esta bloqueado");
         }
 
+        if (ioDiscoPendiente) {
+            throw new IllegalStateException(
+                    "La solicitud de disco aun no ha finalizado");
+        }
+
         motivoBloqueo = MotivoBloqueo.NINGUNO;
         estado = EstadoProceso.LISTO;
     }
 
     // ==========================================
-    // ENTRADA Y SALIDA
+    // ENTRADA Y SALIDA - PROYECTO 1
     // ==========================================
 
     public boolean debeSolicitarIO() {
@@ -254,7 +270,8 @@ public class PCB {
                 && tiempoRestante > 0
                 && programCounter > 0
                 && programCounter % INTERVALO_IO == 0
-                && ciclosIORestantes == 0;
+                && ciclosIORestantes == 0
+                && !ioDiscoPendiente;
     }
 
     public void iniciarIO() {
@@ -265,6 +282,7 @@ public class PCB {
         }
 
         ciclosIORestantes = DURACION_IO;
+
         bloquear(MotivoBloqueo.ENTRADA_SALIDA);
     }
 
@@ -272,7 +290,8 @@ public class PCB {
 
         if (estado != EstadoProceso.BLOQUEADO
                 || motivoBloqueo
-                != MotivoBloqueo.ENTRADA_SALIDA) {
+                != MotivoBloqueo.ENTRADA_SALIDA
+                || ioDiscoPendiente) {
             return;
         }
 
@@ -286,7 +305,54 @@ public class PCB {
         return estado == EstadoProceso.BLOQUEADO
                 && motivoBloqueo
                 == MotivoBloqueo.ENTRADA_SALIDA
+                && !ioDiscoPendiente
                 && ciclosIORestantes == 0;
+    }
+
+    // ==========================================
+    // ENTRADA Y SALIDA - PROYECTO 2
+    // ==========================================
+
+    /**
+     * Bloquea el proceso para esperar una solicitud
+     * gestionada por PlanificadorDisco.
+     *
+     * No utiliza el contador fijo del Proyecto 1.
+     */
+    public void iniciarIODisco() {
+
+        if (estado != EstadoProceso.EJECUCION) {
+            throw new IllegalStateException(
+                    "El proceso debe estar en ejecucion");
+        }
+
+        if (ioDiscoPendiente) {
+            throw new IllegalStateException(
+                    "Ya existe una solicitud de disco pendiente");
+        }
+
+        ciclosIORestantes = 0;
+
+        bloquear(MotivoBloqueo.ENTRADA_SALIDA);
+        ioDiscoPendiente = true;
+    }
+
+    /**
+     * Solo debe llamarse cuando el planificador
+     * confirme que termino la solicitud de disco.
+     */
+    public void completarIODisco() {
+
+        if (!ioDiscoPendiente
+                || estado != EstadoProceso.BLOQUEADO
+                || motivoBloqueo != MotivoBloqueo.ENTRADA_SALIDA) {
+
+            throw new IllegalStateException(
+                    "El proceso no espera una E/S de disco");
+        }
+
+        ioDiscoPendiente = false;
+        desbloquear();
     }
 
     // ==========================================
