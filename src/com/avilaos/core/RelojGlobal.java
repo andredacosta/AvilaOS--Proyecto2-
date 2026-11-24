@@ -17,7 +17,7 @@ public class RelojGlobal {
             long duracionCicloMs) {
 
         if (computadores == null
-                || computadores.length < 2
+                || computadores.length < 1
                 || duracionCicloMs <= 0) {
             throw new IllegalArgumentException(
                     "Configuracion del reloj invalida");
@@ -58,7 +58,6 @@ public class RelojGlobal {
             Throwable[] errores =
                     new Throwable[computadores.length];
 
-            // Preparar un hilo por computador.
             for (int i = 0; i < computadores.length; i++) {
 
                 final int indice = i;
@@ -77,12 +76,10 @@ public class RelojGlobal {
                 }, "AvilaOS-PC-" + computadores[i].getId());
             }
 
-            // Iniciar todos los computadores.
             for (Thread hilo : hilos) {
                 hilo.start();
             }
 
-            // Barrera: esperar a que todos terminen.
             boolean interrumpido = false;
 
             for (Thread hilo : hilos) {
@@ -100,7 +97,6 @@ public class RelojGlobal {
                 }
             }
 
-            // Propagar errores de ejecucion.
             for (Throwable error : errores) {
 
                 if (error != null) {
@@ -115,7 +111,6 @@ public class RelojGlobal {
                 }
             }
 
-            // Solo avanzar cuando todos terminaron.
             cicloActual++;
 
             if (interrumpido) {
@@ -133,7 +128,6 @@ public class RelojGlobal {
 
         try {
             pausado = false;
-
         } finally {
             mutex.release();
         }
@@ -145,7 +139,6 @@ public class RelojGlobal {
 
         try {
             pausado = true;
-
         } finally {
             mutex.release();
         }
@@ -164,7 +157,6 @@ public class RelojGlobal {
             try {
                 ejecutar = !pausado;
                 duracion = duracionCicloMs;
-
             } finally {
                 mutex.release();
             }
@@ -183,7 +175,6 @@ public class RelojGlobal {
 
         try {
             return cicloActual;
-
         } finally {
             mutex.release();
         }
@@ -195,7 +186,6 @@ public class RelojGlobal {
 
         try {
             return pausado;
-
         } finally {
             mutex.release();
         }
@@ -212,7 +202,6 @@ public class RelojGlobal {
 
         try {
             duracionCicloMs = nuevaDuracion;
-
         } finally {
             mutex.release();
         }
