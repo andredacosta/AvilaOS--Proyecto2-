@@ -92,4 +92,3 @@ public class PruebaPlanificadorDisco {
         System.out.println("PRUEBA PLANIFICADOR: PASS");
     }
 }
-s

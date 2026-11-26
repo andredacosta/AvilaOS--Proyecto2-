@@ -81,5 +81,9 @@ public class ListaEnlazada<T> {
         tamano = 0;
         return false;
     }
+
+    public int tamano() {
+        return tamano;
+    }
     
 }
