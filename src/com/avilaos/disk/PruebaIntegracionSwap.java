@@ -13,7 +13,7 @@ public class PruebaIntegracionSwap {
     public static void main(String[] args) {
 
         probarEscenario("FIFO", new FIFO(), false);
-        probarEscenario("SSTF", new SSTF(), true);
+        probarEscenario("SSTF", (PoliticaPlanificacionDisco) new SSTF(), true);
 
         System.out.println();
         System.out.println("PRUEBA INTEGRACION SWAP: PASS");
