@@ -1,4 +1,3 @@
-
 package com.avilaos.gui;
 
 import com.avilaos.config.ConfiguracionSistemaDTO;
@@ -9,9 +8,8 @@ import java.io.File;
 
 /**
  *
- * @author Windows User
+ * @author Elohym Casais
  */
-
 public class VentanaConfiguracion extends JFrame {
     private static final long serialVersionUID = 1L;
 
@@ -21,11 +19,13 @@ public class VentanaConfiguracion extends JFrame {
     private JTextField txtNumComputadores;
     private JTextField txtCapacidadRAM;
 
-    // Gestor de persistencia
+    // Gestor de persistencia y configuración cargada
     private final GestorConfiguracion gestorConfig;
+    private ConfiguracionSistemaDTO configuracionCargada;
 
     public VentanaConfiguracion() {
         this.gestorConfig = new GestorConfiguracion();
+        this.configuracionCargada = null;
 
         setTitle("ÁvilaOS — Configuración Inicial del Sistema");
         setSize(520, 380);
@@ -67,7 +67,7 @@ public class VentanaConfiguracion extends JFrame {
         JButton btnGuardarJSON = new JButton("Guardar JSON");
         JButton btnIniciar = new JButton("Iniciar Simulación");
 
-        // Eventos de persistencia
+        // Eventos de persistencia y arranque
         btnCargarJSON.addActionListener(e -> accionarCargarJSON());
         btnGuardarJSON.addActionListener(e -> accionarGuardarJSON());
         btnIniciar.addActionListener(e -> accionarIniciarSimulacion());
@@ -85,6 +85,8 @@ public class VentanaConfiguracion extends JFrame {
             File archivo = fileChooser.getSelectedFile();
             try {
                 ConfiguracionSistemaDTO dto = gestorConfig.cargarConfiguracion(archivo.getAbsolutePath());
+                this.configuracionCargada = dto;
+
                 txtDuracionCiclo.setText(String.valueOf(dto.getDuracionCicloMs()));
                 txtLatenciaRed.setText(String.valueOf(dto.getLatenciaRedCiclos()));
                 if (dto.getComputadores() != null) {
@@ -102,10 +104,9 @@ public class VentanaConfiguracion extends JFrame {
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             File archivo = fileChooser.getSelectedFile();
             try {
-                ConfiguracionSistemaDTO dto = new ConfiguracionSistemaDTO();
-                dto.setDuracionCicloMs(getDuracionCiclo());
-                dto.setLatenciaRedCiclos(getLatenciaRed());
+                ConfiguracionSistemaDTO dto = construirConfiguracionDesdeFormulario();
                 gestorConfig.guardarConfiguracion(dto, archivo.getAbsolutePath());
+                this.configuracionCargada = dto;
                 JOptionPane.showMessageDialog(this, "Configuración guardada correctamente.", "ÁvilaOS", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Error al guardar archivo: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
@@ -113,8 +114,22 @@ public class VentanaConfiguracion extends JFrame {
         }
     }
 
+    private ConfiguracionSistemaDTO construirConfiguracionDesdeFormulario() {
+        ConfiguracionSistemaDTO dto = new ConfiguracionSistemaDTO();
+        dto.setDuracionCicloMs(getDuracionCiclo());
+        dto.setLatenciaRedCiclos(getLatenciaRed());
+        return dto;
+    }
+
     private void accionarIniciarSimulacion() {
+        ConfiguracionSistemaDTO dto = (this.configuracionCargada != null)
+                ? this.configuracionCargada
+                : construirConfiguracionDesdeFormulario();
+
         VentanaPrincipal vPrincipal = new VentanaPrincipal();
+        ControladorSimulacion controlador = new ControladorSimulacion(vPrincipal, dto);
+        controlador.iniciar();
+
         vPrincipal.setVisible(true);
         this.dispose();
     }

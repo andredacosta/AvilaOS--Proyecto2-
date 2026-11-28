@@ -113,4 +113,27 @@ public class PanelComputador extends JPanel {
             return 2;
         }
     }
+    
+    public String getIdComputador() {
+    return idComputador;
+}
+
+public void actualizarColas(String[] nuevos, String[] listos, String[] bloqueados, String[] terminados) {
+    actualizarModelo(modelNuevos, nuevos);
+    actualizarModelo(modelListos, listos);
+    actualizarModelo(modelBloqueados, bloqueados);
+    actualizarModelo(modelTerminados, terminados);
+}
+
+private void actualizarModelo(DefaultListModel<String> modelo, String[] elementos) {
+    modelo.clear();
+    if (elementos != null) {
+        for (int i = 0; i < elementos.length; i++) {
+            if (elementos[i] != null) {
+                modelo.addElement(elementos[i]);
+            }
+        }
+    }
+}
+    
 }
